@@ -2,6 +2,7 @@
 {
     using System;
     using System.Collections.Generic;
+    using System.Diagnostics;
     using System.Linq;
     using System.Text;
     using System.Text.RegularExpressions;
@@ -157,6 +158,7 @@
                 subNb.Add(cn, learner2.Learn(inputs2, outputs2));
             }
 
+            Stopwatch sw = Stopwatch.StartNew();
             // run
             int okBrand = 0;
             int okModel = 0;
@@ -187,8 +189,11 @@
                 if (row.SubClassName == subClassName) Interlocked.Increment(ref okModel);
             }
 
+            sw.Stop();
+
             Console.WriteLine($"Brand: {okBrand / (double) dataset.Length * 100}%");
             Console.WriteLine($"Model: {okModel / (double) dataset.Length * 100}%");
+            Console.WriteLine($"Speed: {sw.Elapsed / dataset.Length}/sample");
         }
     }
 }
