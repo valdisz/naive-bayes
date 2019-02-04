@@ -99,17 +99,6 @@
             var classNames = new Vocabulory(dataset.Select(x => x.className));
             var subClassNames = new Vocabulory(dataset.Select(x => x.subClassName));
 
-            int[] exactMatch(Vocabulory v, string[] list) {
-                int[] arr = new[] { 0, 0 };
-
-                var found = list.Where(x => v.Has(x)).Select(x => v.Encode(x)).Take(2).ToArray();
-                for (var i = 0; i < found.Length; i++) {
-                    arr[i] = found[i];
-                }
-
-                return arr;
-            }
-
             // subClasses
             Dictionary<int, Vocabulory> scopedSubClassNames = new Dictionary<int, Vocabulory>();
             foreach (var c in classNames.Symbols) {
@@ -122,6 +111,18 @@
             const int SINGLE_CLASS_SZ = 2;
             const int CLASS_SZ = SINGLE_CLASS_SZ * 2;
             const int INPUT_SZ = CLASS_SZ + WORDS_SZ;
+
+            int[] exactMatch(Vocabulory v, string[] list) {
+                int[] arr = new int[SINGLE_CLASS_SZ];
+                Array.Fill(arr, 0);
+
+                var found = list.Where(x => v.Has(x)).Select(x => v.Encode(x)).Take(arr.Length).ToArray();
+                for (var i = 0; i < found.Length; i++) {
+                    arr[i] = found[i];
+                }
+
+                return arr;
+            }
 
             int[] makeInputVector((string[] words, string className, string subClassName) row) {
                 var inArray = new int[INPUT_SZ];
