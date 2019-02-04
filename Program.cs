@@ -38,7 +38,8 @@
 
     class Vocabulory {
         public Vocabulory(IEnumerable<string> input) {
-            list.AddRange(input.Distinct());
+            bag.UnionWith(input);
+            list.AddRange(bag);
             for (var i = 0; i < list.Count; i++) {
                 index.Add(list[i], i);
             }
@@ -46,9 +47,11 @@
 
         private List<string> list = new List<string>();
         private Dictionary<string, int> index = new Dictionary<string, int>();
+        private HashSet<string> bag = new HashSet<string>();
 
         public int Encode(string word) => index[word];
         public string Decode(int i) => list[i];
+        public bool Has(string s) => bag.Contains(s);
 
         public IEnumerable<int> Symbols => Enumerable.Range(0, list.Count);
 
@@ -72,46 +75,77 @@
                 new EmptyTokenFilter()
             );
 
-            var dataset = csvParser
+            var tempDataset = csvParser
                 .ReadFromFile(@"training.csv", Encoding.UTF8)
                 .Where(x => x.IsValid)
                 .Select(x => x.Result)
-                .Select(x => new { Words = tokenizer.Process(x.Input).ToArray(), x.ClassName, x.SubClassName })
+                .Select(x => (
+                    words: tokenizer.Process(x.Input).ToArray(),
+                    className: x.ClassName.ToLowerInvariant(),
+                    subClassName: x.SubClassName.ToLowerInvariant()
+                ))
+                .ToArray();
+
+            var dataset = tempDataset
+                .Concat(tempDataset.Select(row => (
+                    words: tokenizer.Process($"{row.className} {row.subClassName}").ToArray(),
+                    className: row.className,
+                    subClassName: row.subClassName
+                )))
                 .ToArray();
 
             // converting string words to integer
-            var words = new Vocabulory(dataset.SelectMany(x => x.Words));
-            var classNames = new Vocabulory(dataset.Select(x => x.ClassName));
+            var wordsVocab = new Vocabulory(dataset.SelectMany(x => x.words));
+            var classNames = new Vocabulory(dataset.Select(x => x.className));
+            var subClassNames = new Vocabulory(dataset.Select(x => x.subClassName));
+
+            int[] exactMatch(Vocabulory v, string[] list) {
+                int[] arr = new[] { 0, 0 };
+
+                var found = list.Where(x => v.Has(x)).Select(x => v.Encode(x)).Take(2).ToArray();
+                for (var i = 0; i < found.Length; i++) {
+                    arr[i] = found[i];
+                }
+
+                return arr;
+            }
 
             // subClasses
-            Dictionary<int, Vocabulory> subClassNames = new Dictionary<int, Vocabulory>();
+            Dictionary<int, Vocabulory> scopedSubClassNames = new Dictionary<int, Vocabulory>();
             foreach (var c in classNames.Symbols) {
                 var name = classNames.Decode(c);
-                Vocabulory subClasses = new Vocabulory(dataset.Where(row => row.ClassName == name).Select(row => row.SubClassName));
-                subClassNames.Add(c, subClasses);
+                Vocabulory subClasses = new Vocabulory(dataset.Where(row => row.className == name).Select(row => row.subClassName));
+                scopedSubClassNames.Add(c, subClasses);
+            }
+
+            const int WORDS_SZ = 10;
+            const int SINGLE_CLASS_SZ = 2;
+            const int CLASS_SZ = SINGLE_CLASS_SZ * 2;
+            const int INPUT_SZ = CLASS_SZ + WORDS_SZ;
+
+            int[] makeInputVector((string[] words, string className, string subClassName) row) {
+                var inArray = new int[INPUT_SZ];
+                Array.Fill(inArray, 0);
+
+                Array.Copy(exactMatch(classNames, row.words), 0, inArray, 0, SINGLE_CLASS_SZ);
+                Array.Copy(exactMatch(subClassNames, row.words), 0, inArray, SINGLE_CLASS_SZ, SINGLE_CLASS_SZ);
+
+                var wordArray = row.words.Select(x => wordsVocab.Encode(x) + 1).ToArray();
+                var len = Math.Min(wordArray.Length, WORDS_SZ);
+                for (var i = 0; i < len; i++) {
+                    inArray[i + CLASS_SZ] = wordArray[i];
+                }
+
+                return inArray;
             }
 
             // create inputs & outputs
             var inputs = dataset
-                .Select(row => {
-                    var i = new int[10];
-                    Array.Fill(i, 0);
-
-                    for (var wi = 0; wi < i.Length; wi++) {
-                        if (row.Words.Length <= wi) {
-                            i[wi] = 0;
-                        }
-                        else {
-                            i[wi] = words.Encode(row.Words[wi]) + 1;
-                        }
-                    }
-
-                    return i;
-                })
+                .Select(row => makeInputVector(row))
                 .ToArray();
 
             var outputs = dataset
-                .Select(row => classNames.Encode(row.ClassName))
+                .Select(row => classNames.Encode(row.className))
                 .ToArray();
 
             var learner = new NaiveBayesLearning();
@@ -121,7 +155,7 @@
             Dictionary<int, Accord.MachineLearning.Bayes.NaiveBayes> subNb = new Dictionary<int, Accord.MachineLearning.Bayes.NaiveBayes>();
             foreach (var cn in classNames.Symbols) {
                 var name = classNames.Decode(cn);
-                var subClasses = subClassNames[cn];
+                var subClasses = scopedSubClassNames[cn];
 
                 if (subClasses.Count == 1) {
                     singleSubClass.Add(cn, 0);
@@ -130,27 +164,13 @@
                 }
 
                 var inputs2 = dataset
-                    .Where(x => x.ClassName == name)
-                    .Select(row => {
-                        var i = new int[10];
-                        Array.Fill(i, 0);
-
-                        for (var wi = 0; wi < i.Length; wi++) {
-                            if (row.Words.Length <= wi) {
-                                i[wi] = 0;
-                            }
-                            else {
-                                i[wi] = words.Encode(row.Words[wi]) + 1;
-                            }
-                        }
-
-                        return i;
-                    })
+                    .Where(x => x.className == name)
+                    .Select(row => makeInputVector(row))
                     .ToArray();
 
                 var outputs2 = dataset
-                    .Where(x => x.ClassName == name)
-                    .Select(row => subClasses.Encode(row.SubClassName))
+                    .Where(x => x.className == name)
+                    .Select(row => subClasses.Encode(row.subClassName))
                     .ToArray();
 
                 var learner2 = new NaiveBayesLearning();
@@ -162,18 +182,21 @@
             int okBrand = 0;
             int okModel = 0;
             foreach (var row in dataset) {
-                var input = row.Words.Select(w => words.Encode(w) + 1).ToArray();
-                if (input.Length < 10) {
-                    var len = input.Length;
-                    Array.Resize(ref input, 10);
-                    Array.Fill(input, 0, len, 10 - len);
-                }
+                var wordInput = row.words.Select(w => wordsVocab.Encode(w) + 1).ToArray();
+                var classInput = exactMatch(classNames, row.words);
+                var subClassInput = exactMatch(subClassNames, row.words);
+
+                int[] input = new int[INPUT_SZ];
+                Array.Fill(input, 0);
+                Array.Copy(classInput, 0, input, 0, SINGLE_CLASS_SZ);
+                Array.Copy(subClassInput, 0, input, SINGLE_CLASS_SZ, SINGLE_CLASS_SZ);
+                Array.Copy(wordInput, 0, input, CLASS_SZ, Math.Min(wordInput.Length, WORDS_SZ));
 
                 var res = nb.Decide(input);
                 // var probs = nb.Probabilities(input);
 
                 var className = classNames.Decode(res);
-                if (row.ClassName == className) Interlocked.Increment(ref okBrand);
+                if (row.className == className) Interlocked.Increment(ref okBrand);
 
                 int subRes;
                 if (subNb[res] != null) {
@@ -184,8 +207,12 @@
                     subRes = singleSubClass[res];
                 }
 
-                var subClassName = subClassNames[res].Decode(subRes);
-                if (row.SubClassName == subClassName) Interlocked.Increment(ref okModel);
+                var subClassName = scopedSubClassNames[res].Decode(subRes);
+                if (row.subClassName == subClassName) Interlocked.Increment(ref okModel);
+
+                // if (row.className != className || row.subClassName != subClassName) {
+                //     Console.WriteLine($"{string.Join(" ", row.words)}\tgot {className} {subClassName}\t must be {row.className} {row.subClassName}");
+                // }
             }
 
             sw.Stop();
