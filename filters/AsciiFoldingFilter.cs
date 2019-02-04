@@ -1,5 +1,6 @@
 namespace naive_bayes
 {
+    using System;
     using System.Collections.Generic;
     using System.Globalization;
     using System.Text;
@@ -10,28 +11,28 @@ namespace naive_bayes
             yield return RemoveDiacritics(input, true);
         }
 
-        public static IEnumerable<char> RemoveDiacriticsEnum(string src, bool compatNorm)
-        {
-            foreach(char c in src.Normalize(compatNorm ? NormalizationForm.FormKD : NormalizationForm.FormD))
-            switch(CharUnicodeInfo.GetUnicodeCategory(c))
-            {
-                case UnicodeCategory.NonSpacingMark:
-                case UnicodeCategory.SpacingCombiningMark:
-                case UnicodeCategory.EnclosingMark:
-                    break;
-
-                default:
-                    yield return c;
-                    break;
-            }
-        }
-
         public static string RemoveDiacritics(string src, bool compatNorm)
         {
-            StringBuilder sb = new StringBuilder();
-            foreach(char c in RemoveDiacriticsEnum(src, compatNorm))
-                sb.Append(c);
-            return sb.ToString();
+            ReadOnlySpan<char> input = src.Normalize(compatNorm ? NormalizationForm.FormKD : NormalizationForm.FormD).AsSpan();
+            Span<char> clean = stackalloc char[input.Length];
+
+            int p = 0;
+            for (var i = 0; i < src.Length; i++) {
+                char c = input[i];
+                switch(CharUnicodeInfo.GetUnicodeCategory(c))
+                {
+                    case UnicodeCategory.NonSpacingMark:
+                    case UnicodeCategory.SpacingCombiningMark:
+                    case UnicodeCategory.EnclosingMark:
+                        break;
+
+                    default:
+                        clean[p++] = c;
+                        break;
+                }
+            }
+
+            return new string(clean.Slice(0, p));
         }
     }
 }

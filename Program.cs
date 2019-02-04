@@ -95,7 +95,7 @@
             var inputs = dataset
                 .Select(row => {
                     var i = new int[10];
-                    Array.Fill(i, -1);
+                    Array.Fill(i, 0);
 
                     for (var wi = 0; wi < i.Length; wi++) {
                         if (row.Words.Length <= wi) {
@@ -117,7 +117,6 @@
             var learner = new NaiveBayesLearning();
             Accord.MachineLearning.Bayes.NaiveBayes nb = learner.Learn(inputs, outputs);
 
-
             Dictionary<int, int> singleSubClass = new Dictionary<int, int>();
             Dictionary<int, Accord.MachineLearning.Bayes.NaiveBayes> subNb = new Dictionary<int, Accord.MachineLearning.Bayes.NaiveBayes>();
             foreach (var cn in classNames.Symbols) {
@@ -134,7 +133,7 @@
                     .Where(x => x.ClassName == name)
                     .Select(row => {
                         var i = new int[10];
-                        Array.Fill(i, -1);
+                        Array.Fill(i, 0);
 
                         for (var wi = 0; wi < i.Length; wi++) {
                             if (row.Words.Length <= wi) {
